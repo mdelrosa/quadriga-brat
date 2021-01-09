@@ -31,12 +31,6 @@
 % MTs are placed in accordance with the 3GPP assumptions, where 80% of them are situated indoors at
 % different floor levels.
 
-% k -- shifting sweep
-k_lim = 128;
-k_list = (-k_lim:k_lim);
-pow_ratio = zeros(1,length(k_list));
-% batch_times = zeros(1,N_samples);
-
 % for mobile MTs, we define the following:
 sample_density = 1.2;   % [samples / half wavelength]
 % track_distance = 0.25;  % [meters] - for 5.2GHz
@@ -44,10 +38,27 @@ track_distance = 4;  % [meters] - for 300MHz
 area_len = 400;         % area of MT initial positions [meters]
 area_half = area_len/2;
 timeslots = 10;
-N_samples = 1000;
+N_samples = 10;
+best_shift = 32;
 
-for number = 1:N_samples
-    number
+no_sc = 1024;
+sc_bw = 2e4;
+
+batch_num = 1; % TODO: change batch_num based on input arg/env var
+H_ang_down = zeros(N_samples,timeslots,M,no_sc);
+H_ang_up = zeros(N_samples,timeslots,M,no_sc);
+
+% k -- shifting sweep
+k_lim = 128;
+k_list = (-k_lim:k_lim);
+pow_ratio = zeros(1,length(k_list));
+batch_times = zeros(1,N_samples);
+
+for i_sample = 1:N_samples
+    
+    strout=sprintf("Sample %03d -> ", i_sample);
+    fprintf(strout);
+    tic
     
     set(0,'defaultTextFontSize', 18)                        % Default Font Size
     set(0,'defaultAxesFontSize', 18)                        % Default Font Size
@@ -62,6 +73,7 @@ for number = 1:N_samples
     s.center_frequency = [2.6e8 2.6e8 3.0e8];              % Assign two frequencies, the first one is redundent frequency
     freq_str = '300MHz';
     s.sample_density = sample_density;                     % from t_09_speed_profile_interpolation.m - samples per half-wavelength
+    s.show_progress_bars = 0;                               % Disable progress bars
     no_user = 1;
     
     % from t09_speed_profile_interpolation.m - define a linear track for MT
@@ -118,13 +130,13 @@ for number = 1:N_samples
     % a_35000_Mhz  = qd_arrayant( '3gpp-3d',  16, 8, s.center_frequency(1), 6, 8 );
     % a_35000_Mhz  = qd_arrayant.generate( '3gpp-mmw',  16, 8, s.center_frequency(1), 6, 8 );
     a_redundent  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(1), 1 ); % originally, last arg was 3
-    a_51000_Mhz  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(2), 1 ); % yielded +/-45deg polarized
-    a_53000_Mhz  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(3), 1 ); % elements, yielding 2x antennas
+    a_uplink  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(2), 1 );    % yielded +/-45deg polarized
+    a_downlink  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(3), 1 );  % elements, yielding 2x elements/antenna
     
     
-    l.tx_array(1,1) = a_redundent;                           % Set 2.6 GHz antenna
-    l.tx_array(2,1) = a_51000_Mhz;
-    l.tx_array(3,1) = a_53000_Mhz;
+    l.tx_array(1,1) = a_redundent;                           
+    l.tx_array(2,1) = a_uplink;
+    l.tx_array(3,1) = a_downlink;
     
     l.rx_array = qd_arrayant('omni');                       % Set omni-rx antenna
     
@@ -136,50 +148,59 @@ for number = 1:N_samples
     % frequencies.
 
     c = l.get_channels;
-    CCM = cell(4,no_user);
-%     delay = cell(4,no_user);
-%     EoD = cell(4,no_user);
-%     AoD = cell(4,no_user);
-%     PW = cell(4,no_user);
-%     CGain = cell(4,no_user);
-    no_sc = 1024;
-    sc_bw = 2e4;
+    
+    % get sample time
+    t=toc;
+    batch_times(i_sample) = t;
+    avg_time = mean(batch_times(1:i_sample));
+    proj_time = (N_samples - i_sample)*avg_time / 60;
+    strout=sprintf("Sample Time: %03.1f sec - Sample Avg. Time: %03.1f sec - Projected Batch Time: %03.1f min \n", t, avg_time, proj_time);
+    fprintf(strout);
+    
     freq_response = zeros(2,timeslots,M,no_sc); % init freq response
     H_freq_down = zeros(timeslots,M,no_sc);
     H_freq_up = zeros(timeslots,M,no_sc);
+    H_ang_down_sample = zeros(timeslots,M,no_sc);
+    H_ang_up_sample = zeros(timeslots,M,no_sc);
     for idx_UD = 1:2
         for i = 1:no_user
             c(i,1,idx_UD+1).individual_delays = 0;
         end
         for t_i = 1:timeslots
-            % TODO: magic number; why use 15000 in this line?
-            % my guess: this is subcarrier bandwidth
             H_freq_down(t_i,:,:) = c(1,2).fr(no_sc*sc_bw,no_sc,t_i); %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
             H_freq_up(t_i,:,:) = c(1,3).fr(no_sc*sc_bw,no_sc,t_i);
             % H_freq_down(t_i,:,:) = c(1,2).coeff; %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
             % H_freq_up(t_i,:,:) = c(1,3).coeff;
             % CCM{idx_UD,iii}(:,:) = freq_response(idx_UD+1,iii,1:2:end,:); % Channel Coefficient Matrix (or CFR)
-%             delay{idx_UD,iii}(:) = c(iii,1,idx_UD+1).delay;
-%             EoD{idx_UD,iii}(:) = c(iii,1,idx_UD+1).par.EoD_cb;
-%             AoD{idx_UD,iii}(:) = c(iii,idx_UD+1).par.AoD_cb;
-%             PW{idx_UD,iii}(:) = c(iii,idx_UD+1).par.pow_cb;
-%             CGain{idx_UD,iii}(:) = c(iii,idx_UD+1).coeff(1,1,:);
+            H_ang_down_sample(t_i,:,:) = fft(squeeze(H_freq_down(t_i,:,:)), [], 2);
+            H_ang_down_sample(t_i,:,:) = ifft(H_ang_down_sample(t_i,:,:), [], 1);
+            H_ang_up_sample(t_i,:,:) = fft(squeeze(H_freq_up(t_i,:,:)), [], 2);
+            H_ang_up_sample(t_i,:,:) = ifft(H_ang_up_sample(t_i,:,:), [], 1);
         end
     end
 %     f1 = ['matnew' num2str(number) '.mat'];
 %     save(f1,'CCM')
     % clear all
     
-    H_ang_t1 = fft(squeeze(H_freq_down(1,:,:)), [], 2);
-    H_ang_t1= ifft(H_ang_t1, [], 1);
-    for k = k_list
-        a_shift = squeeze(circshift(H_ang_t1,k,2)); % for T = 1
-        % a_shift = squeeze(circshift(a_at(timeslot,:,:),k,2)); % for T > 1
-        temp = sum(a_shift(:,1:32).*conj(a_shift(:,1:32)), 'all');
-        pow_ratio(k+k_lim+1) = pow_ratio(k+k_lim+1) + (temp / sum(a_shift.*conj(a_shift), 'all')) / N_samples;
+    if best_shift ~= 0
+        H_ang_down(i_sample,:,:,:) = circshift(H_ang_down_sample, best_shift, 3);
+        H_ang_up(i_sample,:,:,:) = circshift(H_ang_up_sample, best_shift, 3);
+    elseif isnan(best_shift)
+        for k = k_list
+            a_shift = squeeze(circshift(H_ang_t1,k,2)); % for T = 1
+            % a_shift = squeeze(circshift(a_at(timeslot,:,:),k,2)); % for T > 1
+            temp = sum(a_shift(:,1:32).*conj(a_shift(:,1:32)), 'all');
+            pow_ratio(k+k_lim+1) = pow_ratio(k+k_lim+1) + (temp / sum(a_shift.*conj(a_shift), 'all')) / N_samples;
+        end
     end
 
 end
+
+f_down = sprintf('H_ang_down_quadriga_b%d.mat', batch_num);
+f_up   = sprintf('H_ang_up_quadriga_b%d.mat', batch_num);
+save(f_down,'H_ang_down');
+save(f_up,'H_ang_up');
+% clear all;
 
 %% plot circ
 
@@ -195,25 +216,19 @@ title(sprintf('Quadriga Circular Shift on %s (max=%d, N=%d samples)', freq_str, 
 
 %% sanity checking - angular delay domain
 figure(2); clf; hold on;
+H_ang_down_samp = squeeze(H_ang_down(1,1,:,:));
 for t_i = 1:timeslots
     row = round(t_i / timeslots) + 1;
     col = round(t_i / timeslots) + 1;
     subplot(2,5,t_i);
-%     H_ang_down = ifft(squeeze(H_freq_down(t_i,:,:)), [], 1);
-%     H_ang_down = fft(H_ang_down, [], 2);
-%     surf(10*log10(abs(H_ang_down)), 'EdgeColor', 'none');
-    % H_ang_up= ifft(squeeze(H_freq_down(t_i,:,:)), [], 1);
-    % H_ang_up = fft(H_ang_up, [], 2);
-    H_ang_up = fft(squeeze(H_freq_down(t_i,:,:)), [], 2);
-    H_ang_up = ifft(H_ang_up, [], 1);
-    surf(10*log10(abs(H_ang_up)), 'EdgeColor', 'none');
+    surf(10*log10(abs(H_ang_down_samp)), 'EdgeColor', 'none');
     view(0,90);
     xlabel('delay');
     ylabel('angle');
     title(sprintf("t_{%d}", t_i));
 end
 % sgtitle("QuaDRiGa -- Outdoor 5.3GHz - 0.9m/s mobility - 40ms feedback interval");
-sgtitle("QuaDRiGa -- Outdoor 300MHz - 0.9m/s mobility - 40ms feedback interval");
+sgtitle(sprintf("QuaDRiGa -- Outdoor 300MHz - 0.9m/s mobility - 40ms feedback interval - k_{shift}=%d", best_shift));
 
 %% inspect power ratio for different truncation windows
 % truncate_lim = 128;
