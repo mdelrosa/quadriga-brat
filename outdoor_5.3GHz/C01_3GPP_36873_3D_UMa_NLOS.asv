@@ -44,10 +44,10 @@ track_distance = 4;  % [meters] - for 300MHz
 area_len = 400;         % area of MT initial positions [meters]
 area_half = area_len/2;
 timeslots = 10;
-N_samples = 1000;
+N_samples = 1;
 
 for number = 1:N_samples
-    number
+    
     
     set(0,'defaultTextFontSize', 18)                        % Default Font Size
     set(0,'defaultAxesFontSize', 18)                        % Default Font Size
@@ -60,7 +60,6 @@ for number = 1:N_samples
     s = qd_simulation_parameters;
     % s.center_frequency = [5.1e9 5.1e9 5.3e9];              % Assign two frequencies, the first one is redundent frequency
     s.center_frequency = [2.6e8 2.6e8 3.0e8];              % Assign two frequencies, the first one is redundent frequency
-    freq_str = '300MHz';
     s.sample_density = sample_density;                     % from t_09_speed_profile_interpolation.m - samples per half-wavelength
     no_user = 1;
     
@@ -103,7 +102,7 @@ for number = 1:N_samples
     
     % indoor_rx = l.set_scenario('3GPP_3D_UMa',[],[],0);    % Set the scenario
     % l.rx_position(3,~indoor_rx) = 1.5;                      % Set outdoor-users to 1.5 m height
-    % l.visualize
+    l.visualize
     
     N = 1;
     M = 32;
@@ -166,8 +165,8 @@ for number = 1:N_samples
 %             CGain{idx_UD,iii}(:) = c(iii,idx_UD+1).coeff(1,1,:);
         end
     end
-%     f1 = ['matnew' num2str(number) '.mat'];
-%     save(f1,'CCM')
+    f1 = ['matnew' num2str(number) '.mat'];
+    save(f1,'CCM')
     % clear all
     
     H_ang_t1 = fft(squeeze(H_freq_down(1,:,:)), [], 2);
@@ -175,23 +174,13 @@ for number = 1:N_samples
     for k = k_list
         a_shift = squeeze(circshift(H_ang_t1,k,2)); % for T = 1
         % a_shift = squeeze(circshift(a_at(timeslot,:,:),k,2)); % for T > 1
-        temp = sum(a_shift(:,1:32).*conj(a_shift(:,1:32)), 'all');
-        pow_ratio(k+k_lim+1) = pow_ratio(k+k_lim+1) + (temp / sum(a_shift.*conj(a_shift), 'all')) / N_samples;
+        temp = 
+        pow_ratio(k+k_lim+1) = pow_ratio(k+k_lim+1) + (sum(a_shift(:,1:32).*conj(a_shift(:,1:32))) / sum(a_shift.*conj(a_shift))) / N_samples;
     end
 
 end
 
-%% plot circ
-
-[m, idx] = max(pow_ratio);
-
-figure(1); clf; hold on;
-plot(k_list,pow_ratio);
-% title_str = sprintf('Circular Shift on Indoor 5.3GHz (max=%d)', idx - (k_lim+1));
-ylabel('P_{truncate} / P_{total}');
-xlabel('k');
-title(sprintf('Quadriga Circular Shift on %s (max=%d, N=%d samples)', freq_str, idx-(k_lim+1), N_samples));
-
+pow_ratio
 
 %% sanity checking - angular delay domain
 figure(2); clf; hold on;
