@@ -31,6 +31,24 @@
 % MTs are placed in accordance with the 3GPP assumptions, where 80% of them are situated indoors at
 % different floor levels.
 
+% define batch_num/N_samples
+debug_flag = 0;
+if debug_flag==0
+	% BatchLim = 1000;
+	num_samples = 5000;
+else
+	num_samples = 5;
+end
+
+try 
+	if ~batch_num
+		batch_num = 1;
+	end
+catch
+	fprintf('Batch number undefined. Setting batch_num=1\n');
+	batch_num = 1;
+end
+
 % for mobile MTs, we define the following:
 sample_density = 1.2;   % [samples / half wavelength]
 % track_distance = 0.25;  % [meters] - for 5.2GHz
@@ -41,6 +59,8 @@ timeslots = 10;
 N_samples = 10;
 best_shift = 32;
 
+N = 1;
+M = 32;
 no_sc = 1024;
 sc_bw = 2e4;
 
@@ -54,9 +74,11 @@ k_list = (-k_lim:k_lim);
 pow_ratio = zeros(1,length(k_list));
 batch_times = zeros(1,N_samples);
 
+fprintf(sprintf('Batch #%d -- %d samples. \n',batch_num,N_samples));
+
 for i_sample = 1:N_samples
     
-    strout=sprintf("Sample %03d -> ", i_sample);
+    strout=sprintf("Sample %03d / %03d -> ", i_sample, N_samples);
     fprintf(strout);
     tic
     
@@ -117,8 +139,6 @@ for i_sample = 1:N_samples
     % l.rx_position(3,~indoor_rx) = 1.5;                      % Set outdoor-users to 1.5 m height
     % l.visualize
     
-    N = 1;
-    M = 32;
     %% Antenna set-up
     % Two different antenna configurations are used at the BS. The 2.6 GHz antenna is constructed from 8
     % vertically stacked patch elements with +/- 45 degree polarization. The electric downtilt is set to
@@ -204,44 +224,47 @@ save(f_up,'H_ang_up');
 
 %% plot circ
 
-[m, idx] = max(pow_ratio);
+if debug_flag
+    if isnan(best_shift)
+        [m, idx] = max(pow_ratio);
 
-figure(1); clf; hold on;
-plot(k_list,pow_ratio);
-% title_str = sprintf('Circular Shift on Indoor 5.3GHz (max=%d)', idx - (k_lim+1));
-ylabel('P_{truncate} / P_{total}');
-xlabel('k');
-title(sprintf('Quadriga Circular Shift on %s (max=%d, N=%d samples)', freq_str, idx-(k_lim+1), N_samples));
+        figure(1); clf; hold on;
+        plot(k_list,pow_ratio);
+        % title_str = sprintf('Circular Shift on Indoor 5.3GHz (max=%d)', idx - (k_lim+1));
+        ylabel('P_{truncate} / P_{total}');
+        title(sprintf('Quadriga Circular Shift on %s (max=%d, N=%d samples)', freq_str, idx-(k_lim+1), N_samples));
+    end
 
 
-%% sanity checking - angular delay domain
-figure(2); clf; hold on;
-H_ang_down_samp = squeeze(H_ang_down(1,1,:,:));
-for t_i = 1:timeslots
-    row = round(t_i / timeslots) + 1;
-    col = round(t_i / timeslots) + 1;
-    subplot(2,5,t_i);
-    surf(10*log10(abs(H_ang_down_samp)), 'EdgeColor', 'none');
-    view(0,90);
-    xlabel('delay');
-    ylabel('angle');
-    title(sprintf("t_{%d}", t_i));
-end
-% sgtitle("QuaDRiGa -- Outdoor 5.3GHz - 0.9m/s mobility - 40ms feedback interval");
-sgtitle(sprintf("QuaDRiGa -- Outdoor 300MHz - 0.9m/s mobility - 40ms feedback interval - k_{shift}=%d", best_shift));
+    %% sanity checking - angular delay domain
+    figure(2); clf; hold on;
+    H_ang_down_samp = squeeze(H_ang_down(1,1,:,:));
+    for t_i = 1:timeslots
+        row = round(t_i / timeslots) + 1;
+        col = round(t_i / timeslots) + 1;
+        subplot(2,5,t_i);
+        surf(10*log10(abs(H_ang_down_samp)), 'EdgeColor', 'none');
+        view(0,90);
+        xlabel('delay');
+        ylabel('angle');
+        title(sprintf("t_{%d}", t_i));
+    end
+    % sgtitle("QuaDRiGa -- Outdoor 5.3GHz - 0.9m/s mobility - 40ms feedback interval");
+    sgtitle(sprintf("QuaDRiGa -- Outdoor 300MHz - 0.9m/s mobility - 40ms feedback interval - k_{shift}=%d", best_shift));
 
-%% inspect power ratio for different truncation windows
-% truncate_lim = 128;
-% truncate_stride = 4;
-% l_list = (0:truncate_stride:truncate_lim);
-% pow_list = zeros(1,length(l_list));
-% 
-% for l = l_list
-%    a_drop = H_ang_down(l+1:end,:);
-%    % del, ang = size(a_drop);
-%    pow_idx = round(l/truncate_stride)+1;
-%    pow_list(pow_idx) = pow_list(pow_idx) + (sqrt(sum(a_drop .* conj(a_drop), 'all')) / N_samples);
-% end
-% 
-% figure(3); clf; hold on;
-% plot(l_list, pow_list);
+    %% inspect power ratio for different truncation windows
+    % truncate_lim = 128;
+    % truncate_stride = 4;
+    % l_list = (0:truncate_stride:truncate_lim);
+    % pow_list = zeros(1,length(l_list));
+    % 
+    % for l = l_list
+    %    a_drop = H_ang_down(l+1:end,:);
+    %    % del, ang = size(a_drop);
+    %    pow_idx = round(l/truncate_stride)+1;
+    %    pow_list(pow_idx) = pow_list(pow_idx) + (sqrt(sum(a_drop .* conj(a_drop), 'all')) / N_samples);
+    % end
+    % 
+    % figure(3); clf; hold on;
+    % plot(l_list, pow_list);
+        end
