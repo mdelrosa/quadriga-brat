@@ -43,6 +43,8 @@ best_shift = 32;
 
 no_sc = 1024;
 sc_bw = 2e4;
+N = 1;
+M = 32;
 
 batch_num = 1; % TODO: change batch_num based on input arg/env var
 H_ang_down = zeros(N_samples,timeslots,M,no_sc);
@@ -117,8 +119,6 @@ for i_sample = 1:N_samples
     % l.rx_position(3,~indoor_rx) = 1.5;                      % Set outdoor-users to 1.5 m height
     % l.visualize
     
-    N = 1;
-    M = 32;
     %% Antenna set-up
     % Two different antenna configurations are used at the BS. The 2.6 GHz antenna is constructed from 8
     % vertically stacked patch elements with +/- 45 degree polarization. The electric downtilt is set to
