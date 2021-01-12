@@ -35,9 +35,9 @@
 debug_flag = 0;
 if debug_flag==0
 	% BatchLim = 1000;
-	num_samples = 5000;
+	N_samples = 5000;
 else
-	num_samples = 5;
+	N_samples = 5;
 end
 
 try 
@@ -49,6 +49,9 @@ catch
 	batch_num = 1;
 end
 
+% seed random number generator; prevent identical datasets between different batches
+rng(batch_num*10);
+
 % for mobile MTs, we define the following:
 sample_density = 1.2;   % [samples / half wavelength]
 % track_distance = 0.25;  % [meters] - for 5.2GHz
@@ -56,17 +59,16 @@ track_distance = 4;  % [meters] - for 300MHz
 area_len = 400;         % area of MT initial positions [meters]
 area_half = area_len/2;
 timeslots = 10;
-N_samples = 10;
 best_shift = 32;
 
 N = 1;
 M = 32;
 no_sc = 1024;
 sc_bw = 2e4;
+n_truncate = 32;
 
-batch_num = 1; % TODO: change batch_num based on input arg/env var
-H_ang_down = zeros(N_samples,timeslots,M,no_sc);
-H_ang_up = zeros(N_samples,timeslots,M,no_sc);
+Hur_down = zeros(N_samples,timeslots,M,n_truncate);
+Hur_up = zeros(N_samples,timeslots,M,n_truncate);
 
 % k -- shifting sweep
 k_lim = 128;
@@ -153,7 +155,6 @@ for i_sample = 1:N_samples
     a_uplink  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(2), 1 );    % yielded +/-45deg polarized
     a_downlink  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(3), 1 );  % elements, yielding 2x elements/antenna
     
-    
     l.tx_array(1,1) = a_redundent;                           
     l.tx_array(2,1) = a_uplink;
     l.tx_array(3,1) = a_downlink;
@@ -182,29 +183,29 @@ for i_sample = 1:N_samples
     H_freq_up = zeros(timeslots,M,no_sc);
     H_ang_down_sample = zeros(timeslots,M,no_sc);
     H_ang_up_sample = zeros(timeslots,M,no_sc);
-    for idx_UD = 1:2
-        for i = 1:no_user
-            c(i,1,idx_UD+1).individual_delays = 0;
-        end
-        for t_i = 1:timeslots
-            H_freq_down(t_i,:,:) = c(1,2).fr(no_sc*sc_bw,no_sc,t_i); %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
-            H_freq_up(t_i,:,:) = c(1,3).fr(no_sc*sc_bw,no_sc,t_i);
-            % H_freq_down(t_i,:,:) = c(1,2).coeff; %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
-            % H_freq_up(t_i,:,:) = c(1,3).coeff;
-            % CCM{idx_UD,iii}(:,:) = freq_response(idx_UD+1,iii,1:2:end,:); % Channel Coefficient Matrix (or CFR)
-            H_ang_down_sample(t_i,:,:) = fft(squeeze(H_freq_down(t_i,:,:)), [], 2);
-            H_ang_down_sample(t_i,:,:) = ifft(H_ang_down_sample(t_i,:,:), [], 1);
-            H_ang_up_sample(t_i,:,:) = fft(squeeze(H_freq_up(t_i,:,:)), [], 2);
-            H_ang_up_sample(t_i,:,:) = ifft(H_ang_up_sample(t_i,:,:), [], 1);
-        end
+    % for idx_UD = 1:2
+    %     for i = 1:no_user
+    %         c(i,1,idx_UD+1).individual_delays = 0;
+    %     end
+    % end
+    for t_i = 1:timeslots
+        H_freq_down(t_i,:,:) = c(1,2).fr(no_sc*sc_bw,no_sc,t_i); %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
+        H_freq_up(t_i,:,:) = c(1,3).fr(no_sc*sc_bw,no_sc,t_i);
+        % H_freq_down(t_i,:,:) = c(1,2).coeff; %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
+        % H_freq_up(t_i,:,:) = c(1,3).coeff;
+        % CCM{idx_UD,iii}(:,:) = freq_response(idx_UD+1,iii,1:2:end,:); % Channel Coefficient Matrix (or CFR)
+        H_ang_down_sample(t_i,:,:) = fft(squeeze(H_freq_down(t_i,:,:)), [], 2);
+        H_ang_down_sample(t_i,:,:) = ifft(H_ang_down_sample(t_i,:,:), [], 1);
+        H_ang_up_sample(t_i,:,:) = fft(squeeze(H_freq_up(t_i,:,:)), [], 2);
+        H_ang_up_sample(t_i,:,:) = ifft(H_ang_up_sample(t_i,:,:), [], 1);
     end
 %     f1 = ['matnew' num2str(number) '.mat'];
 %     save(f1,'CCM')
     % clear all
     
     if best_shift ~= 0
-        H_ang_down(i_sample,:,:,:) = circshift(H_ang_down_sample, best_shift, 3);
-        H_ang_up(i_sample,:,:,:) = circshift(H_ang_up_sample, best_shift, 3);
+        H_ang_down_sample = circshift(H_ang_down_sample, best_shift, 3);
+        H_ang_up_sample = circshift(H_ang_up_sample, best_shift, 3);
     elseif isnan(best_shift)
         for k = k_list
             a_shift = squeeze(circshift(H_ang_t1,k,2)); % for T = 1
@@ -214,12 +215,14 @@ for i_sample = 1:N_samples
         end
     end
 
+    Hur_down(i_sample,:,:,:) = H_ang_down_sample(:,:,1:n_truncate);
+    Hur_up(i_sample,:,:,:) = H_ang_up_sample(:,:,1:n_truncate);
 end
 
-f_down = sprintf('H_ang_down_quadriga_b%d.mat', batch_num);
-f_up   = sprintf('H_ang_up_quadriga_b%d.mat', batch_num);
-save(f_down,'H_ang_down');
-save(f_up,'H_ang_up');
+f_down = sprintf('H_ang_quadriga_%d_down.mat', batch_num);
+f_up   = sprintf('H_ang_quadriga_%d_up.mat', batch_num);
+save(f_down,'Hur_down');
+save(f_up,'Hur_up');
 % clear all;
 
 %% plot circ
