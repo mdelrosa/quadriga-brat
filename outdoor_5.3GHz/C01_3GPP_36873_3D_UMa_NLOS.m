@@ -31,6 +31,26 @@
 % MTs are placed in accordance with the 3GPP assumptions, where 80% of them are situated indoors at
 % different floor levels.
 
+% define batch_num/N_samples
+debug_flag = 1;
+if debug_flag==0
+	N_samples = 5000;
+else
+	N_samples = 10;
+end
+
+try 
+	if ~batch_num
+		batch_num = 1;
+	end
+catch
+	fprintf('Batch number undefined. Setting batch_num=1\n');
+	batch_num = 1;
+end
+
+% seed random number generator; prevent identical datasets between different batches
+rng(batch_num*10);
+
 % for mobile MTs, we define the following:
 sample_density = 1.2;   % [samples / half wavelength]
 % track_distance = 0.25;  % [meters] - for 5.2GHz
@@ -38,27 +58,30 @@ track_distance = 4;  % [meters] - for 300MHz
 area_len = 400;         % area of MT initial positions [meters]
 area_half = area_len/2;
 timeslots = 10;
-N_samples = 10;
-best_shift = 32;
+best_shift = 84;
 
-no_sc = 1024;
-sc_bw = 2e4;
 N = 1;
 M = 32;
+no_sc = 1024;
+sc_bw = 2e4;
+n_truncate = 96;
 
-batch_num = 1; % TODO: change batch_num based on input arg/env var
-H_ang_down = zeros(N_samples,timeslots,M,no_sc);
-H_ang_up = zeros(N_samples,timeslots,M,no_sc);
+Hur_down = zeros(N_samples,timeslots,M,n_truncate);
+Hur_up = zeros(N_samples,timeslots,M,n_truncate);
+P_excess_down = zeros(N_samples,timeslots);
+P_excess_up   = zeros(N_samples,timeslots);
 
 % k -- shifting sweep
-k_lim = 128;
+k_lim = 256;
 k_list = (-k_lim:k_lim);
 pow_ratio = zeros(1,length(k_list));
 batch_times = zeros(1,N_samples);
 
+fprintf(sprintf('Batch #%d -- %d samples. \n',batch_num,N_samples));
+
 for i_sample = 1:N_samples
     
-    strout=sprintf("Sample %03d -> ", i_sample);
+    strout=sprintf("Sample %03d / %03d -> ", i_sample, N_samples);
     fprintf(strout);
     tic
     
@@ -133,7 +156,6 @@ for i_sample = 1:N_samples
     a_uplink  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(2), 1 );    % yielded +/-45deg polarized
     a_downlink  = qd_arrayant.generate( '3gpp-3d',  N, M, s.center_frequency(3), 1 );  % elements, yielding 2x elements/antenna
     
-    
     l.tx_array(1,1) = a_redundent;                           
     l.tx_array(2,1) = a_uplink;
     l.tx_array(3,1) = a_downlink;
@@ -162,86 +184,88 @@ for i_sample = 1:N_samples
     H_freq_up = zeros(timeslots,M,no_sc);
     H_ang_down_sample = zeros(timeslots,M,no_sc);
     H_ang_up_sample = zeros(timeslots,M,no_sc);
-    for idx_UD = 1:2
-        for i = 1:no_user
-            c(i,1,idx_UD+1).individual_delays = 0;
-        end
-        for t_i = 1:timeslots
-            H_freq_down(t_i,:,:) = c(1,2).fr(no_sc*sc_bw,no_sc,t_i); %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
-            H_freq_up(t_i,:,:) = c(1,3).fr(no_sc*sc_bw,no_sc,t_i);
-            % H_freq_down(t_i,:,:) = c(1,2).coeff; %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
-            % H_freq_up(t_i,:,:) = c(1,3).coeff;
-            % CCM{idx_UD,iii}(:,:) = freq_response(idx_UD+1,iii,1:2:end,:); % Channel Coefficient Matrix (or CFR)
-            H_ang_down_sample(t_i,:,:) = fft(squeeze(H_freq_down(t_i,:,:)), [], 2);
-            H_ang_down_sample(t_i,:,:) = ifft(H_ang_down_sample(t_i,:,:), [], 1);
-            H_ang_up_sample(t_i,:,:) = fft(squeeze(H_freq_up(t_i,:,:)), [], 2);
-            H_ang_up_sample(t_i,:,:) = ifft(H_ang_up_sample(t_i,:,:), [], 1);
-        end
+    for t_i = 1:timeslots
+        H_freq_down(t_i,:,:) = c(1,2).fr(no_sc*sc_bw,no_sc,t_i); %clear CFR; CFR(:) = abs(freq_response(1,:,3)); CFR = CFR(1:2:end);
+        H_freq_up(t_i,:,:) = c(1,3).fr(no_sc*sc_bw,no_sc,t_i);
+        H_ang_down_sample(t_i,:,:) = fft(squeeze(H_freq_down(t_i,:,:)), [], 2);
+        H_ang_down_sample(t_i,:,:) = ifft(H_ang_down_sample(t_i,:,:), [], 1);
+        H_ang_up_sample(t_i,:,:) = fft(squeeze(H_freq_up(t_i,:,:)), [], 2);
+        H_ang_up_sample(t_i,:,:) = ifft(H_ang_up_sample(t_i,:,:), [], 1);
     end
-%     f1 = ['matnew' num2str(number) '.mat'];
-%     save(f1,'CCM')
-    % clear all
-    
-    if best_shift ~= 0
-        H_ang_down(i_sample,:,:,:) = circshift(H_ang_down_sample, best_shift, 3);
-        H_ang_up(i_sample,:,:,:) = circshift(H_ang_up_sample, best_shift, 3);
-    elseif isnan(best_shift)
+    try
+        H_ang_down_sample = circshift(H_ang_down_sample, best_shift, 3);
+        H_ang_up_sample = circshift(H_ang_up_sample, best_shift, 3);
+        fprintf("Samples shifted by %d\n", best_shift);
+    catch
         for k = k_list
-            a_shift = squeeze(circshift(H_ang_t1,k,2)); % for T = 1
+            a_shift = circshift(squeeze(H_ang_down_sample(1,:,:)),k,2); % for T = 1
             % a_shift = squeeze(circshift(a_at(timeslot,:,:),k,2)); % for T > 1
-            temp = sum(a_shift(:,1:32).*conj(a_shift(:,1:32)), 'all');
+            temp = sum(a_shift(:,1:n_truncate).*conj(a_shift(:,1:n_truncate)), 'all');
             pow_ratio(k+k_lim+1) = pow_ratio(k+k_lim+1) + (temp / sum(a_shift.*conj(a_shift), 'all')) / N_samples;
         end
     end
 
+    Hur_down(i_sample,:,:,:) = H_ang_down_sample(:,:,1:n_truncate);
+    Hur_up(i_sample,:,:,:) = H_ang_up_sample(:,:,1:n_truncate);
+    P_excess_down(i_sample,:) = sum(sum(conj(H_ang_down_sample(:,:,n_truncate+1:end)).*H_ang_down_sample(:,:,n_truncate+1:end), 2), 3);
+    P_excess_up(i_sample,:)   = sum(sum(conj(H_ang_up_sample(:,:,n_truncate+1:end)).*H_ang_up_sample(:,:,n_truncate+1:end), 2), 3);
 end
 
-f_down = sprintf('H_ang_down_quadriga_b%d.mat', batch_num);
-f_up   = sprintf('H_ang_up_quadriga_b%d.mat', batch_num);
-save(f_down,'H_ang_down');
-save(f_up,'H_ang_up');
+f_down = sprintf('H_ang_quadriga_%d_down.mat', batch_num);
+f_up   = sprintf('H_ang_quadriga_%d_up.mat', batch_num);
+P_down = sprintf('P_excess_quadriga_%d_down.mat', batch_num);
+P_up   = sprintf('P_excess_quadriga_%d_up.mat', batch_num);
+save(f_down,'Hur_down');
+save(f_up,'Hur_up');
+save(P_down,'P_excess_down');
+save(P_up,'P_excess_up');
 % clear all;
 
 %% plot circ
 
-[m, idx] = max(pow_ratio);
+if debug_flag
+    try
+        [m, idx] = max(pow_ratio);
 
-figure(1); clf; hold on;
-plot(k_list,pow_ratio);
-% title_str = sprintf('Circular Shift on Indoor 5.3GHz (max=%d)', idx - (k_lim+1));
-ylabel('P_{truncate} / P_{total}');
-xlabel('k');
-title(sprintf('Quadriga Circular Shift on %s (max=%d, N=%d samples)', freq_str, idx-(k_lim+1), N_samples));
+        figure(1); clf; hold on;
+        plot(k_list,pow_ratio);
+        % title_str = sprintf('Circular Shift on Indoor 5.3GHz (max=%d)', idx - (k_lim+1));
+        ylabel('P_{truncate} / P_{total}');
+        title(sprintf('Quadriga Circular Shift on %s (max=%d, N=%d samples)', freq_str, idx-(k_lim+1), N_samples));
+    catch
+        fprintf("--- best_shift defined. Skipping pow_ratio plot. ---");
+    end
 
 
-%% sanity checking - angular delay domain
-figure(2); clf; hold on;
-H_ang_down_samp = squeeze(H_ang_down(1,1,:,:));
-for t_i = 1:timeslots
-    row = round(t_i / timeslots) + 1;
-    col = round(t_i / timeslots) + 1;
-    subplot(2,5,t_i);
-    surf(10*log10(abs(H_ang_down_samp)), 'EdgeColor', 'none');
-    view(0,90);
-    xlabel('delay');
-    ylabel('angle');
-    title(sprintf("t_{%d}", t_i));
+    %% sanity checking - angular delay domain
+    figure(2); clf; hold on;
+    H_samp = squeeze(H_ang_down_sample);
+    for t_i = 1:timeslots
+        row = round(t_i / timeslots) + 1;
+        col = round(t_i / timeslots) + 1;
+        subplot(2,5,t_i);
+        surf(10*log10(abs(squeeze(H_samp(t_i,:,1:n_truncate)))), 'EdgeColor', 'none');
+        view(0,90);
+        xlabel('delay');
+        ylabel('angle');
+        title(sprintf("t_{%d}", t_i));
+    end
+    % sgtitle("QuaDRiGa -- Outdoor 5.3GHz - 0.9m/s mobility - 40ms feedback interval");
+    sgtitle("QuaDRiGa -- Outdoor 300MHz - 0.9m/s mobility - 40ms feedback interval");
+
+    %% inspect power ratio for different truncation windows
+%     truncate_lim = 128;
+%     truncate_stride = 4;
+%     l_list = (0:truncate_stride:truncate_lim);
+%     pow_list = zeros(1,length(l_list));
+%     
+%     for l = l_list
+%        a_drop = H_ang_down(l+1:end,:);
+%        del, ang = size(a_drop);
+%        pow_idx = round(l/truncate_stride)+1;
+%        pow_list(pow_idx) = pow_list(pow_idx) + (sqrt(sum(a_drop .* conj(a_drop), 'all')) / N_samples);
+%     end
+%     
+%     figure(3); clf; hold on;
+%     plot(l_list, pow_list);
 end
-% sgtitle("QuaDRiGa -- Outdoor 5.3GHz - 0.9m/s mobility - 40ms feedback interval");
-sgtitle(sprintf("QuaDRiGa -- Outdoor 300MHz - 0.9m/s mobility - 40ms feedback interval - k_{shift}=%d", best_shift));
-
-%% inspect power ratio for different truncation windows
-% truncate_lim = 128;
-% truncate_stride = 4;
-% l_list = (0:truncate_stride:truncate_lim);
-% pow_list = zeros(1,length(l_list));
-% 
-% for l = l_list
-%    a_drop = H_ang_down(l+1:end,:);
-%    % del, ang = size(a_drop);
-%    pow_idx = round(l/truncate_stride)+1;
-%    pow_list(pow_idx) = pow_list(pow_idx) + (sqrt(sum(a_drop .* conj(a_drop), 'all')) / N_samples);
-% end
-% 
-% figure(3); clf; hold on;
-% plot(l_list, pow_list);
