@@ -10,4 +10,4 @@
 # sbatch --export=a=$a,gen_dir=$b --job-name=outslow_$a data_gen_outdoor_slow.sh
 
 module load matlab/2019a
-matlab -r 'cd ${gen_dir}; batch_num = ${a}; C01_3GPP_36873_3D_UMa_NLOS();'
+matlab -r "addpath('${quadriga_src}'); cd ${gen_dir}; batch_num=${batch_num}; C01_3GPP_36873_3D_UMa_NLOS();"
