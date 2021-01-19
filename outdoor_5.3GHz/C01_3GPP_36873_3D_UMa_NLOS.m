@@ -32,7 +32,7 @@
 % different floor levels.
 
 % define batch_num/N_samples
-debug_flag = 1;
+debug_flag = 0;
 if debug_flag==0
 	N_samples = 2500;
 else
@@ -56,9 +56,14 @@ sample_density = 1.2;   % [samples / half wavelength]
 % track_distance = 0.25;  % [meters] - for 5.2GHz
 track_distance = 4;  % [meters] - for 300MHz
 track_speed = 0.9;  % [meters/second] - for 300MHz
+feedback_interval = 0.04; % [seconds]
+
 area_len = 400;         % area of MT initial positions [meters]
 area_half = area_len/2;
 timeslots = 10;
+feedback_times = (0:timeslots-1)*feedback_interval;
+feedback_locs = feedback_times*track_speed;
+feedback_profile = [feedback_times; feedback_locs];
 best_shift = 84;
 
 N = 1;
@@ -111,8 +116,9 @@ for i_sample = 1:N_samples
     theta = pi*(2*rand(1) - 1);
     t = qd_track('linear', track_distance, theta);            % 20 m track, direction SE
     t.initial_position = [x_i; y_i; 1.5];                        % Start position
-    t.interpolate_positions( s.samples_per_meter );         % Apply sample density
+    % t.interpolate_positions( s.samples_per_meter );         % Apply sample density
     t.set_speed( track_speed );         % Apply sample density
+    t.interpolate( 'time', feedback_interval, feedback_profile );
     % t.interpolate_positions( 128/20 );                      % Interpolate
     t.segment_index       = [1];                      % Assign segments
     % t.scenario            = {'BERLIN_UMa_LOS','BERLIN_UMa_NLOS','BERLIN_UMa_LOS'};
