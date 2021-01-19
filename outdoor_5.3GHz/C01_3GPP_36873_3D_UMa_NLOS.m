@@ -34,7 +34,7 @@
 % define batch_num/N_samples
 debug_flag = 1;
 if debug_flag==0
-	N_samples = 5000;
+	N_samples = 2500;
 else
 	N_samples = 10;
 end
@@ -55,6 +55,7 @@ rng(batch_num*10);
 sample_density = 1.2;   % [samples / half wavelength]
 % track_distance = 0.25;  % [meters] - for 5.2GHz
 track_distance = 4;  % [meters] - for 300MHz
+track_speed = 0.9;  % [meters/second] - for 300MHz
 area_len = 400;         % area of MT initial positions [meters]
 area_half = area_len/2;
 timeslots = 10;
@@ -111,6 +112,7 @@ for i_sample = 1:N_samples
     t = qd_track('linear', track_distance, theta);            % 20 m track, direction SE
     t.initial_position = [x_i; y_i; 1.5];                        % Start position
     t.interpolate_positions( s.samples_per_meter );         % Apply sample density
+    t.set_speed( track_speed );         % Apply sample density
     % t.interpolate_positions( 128/20 );                      % Interpolate
     t.segment_index       = [1];                      % Assign segments
     % t.scenario            = {'BERLIN_UMa_LOS','BERLIN_UMa_NLOS','BERLIN_UMa_LOS'};
@@ -195,7 +197,6 @@ for i_sample = 1:N_samples
     try
         H_ang_down_sample = circshift(H_ang_down_sample, best_shift, 3);
         H_ang_up_sample = circshift(H_ang_up_sample, best_shift, 3);
-        fprintf("Samples shifted by %d\n", best_shift);
     catch
         for k = k_list
             a_shift = circshift(squeeze(H_ang_down_sample(1,:,:)),k,2); % for T = 1
